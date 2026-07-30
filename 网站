@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>visionOS · 空间控制台</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js">
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js">
+    </script>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <style>
+        /* ============================================================
+           visionOS Spatial UI Design System — 舒适版
+           ============================================================ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0a0a12;
+            --text-primary: rgba(255, 255, 255, 0.92);
+            --text-secondary: rgba(255, 255, 255, 0.55);
+            --text-tertiary: rgba(255, 255, 255, 0.25);
+            --glass-bg: rgba(255, 255, 255, 0.04);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+            --glass-blur: 50px;
+            --accent: #6c5ce7;
+            --accent-light: #8b5cf6;
+            --radius-xl: 40px;
+            --radius-lg: 28px;
+            --radius-md: 18px;
+            --radius-sm: 12px;
+            --radius-full: 9999px;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+            --section-spacing: 80px;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #eceff4;
+                --text-primary: rgba(0, 0, 0, 0.88);
+                --text-secondary: rgba(0, 0, 0, 0.5);
+                --text-tertiary: rgba(0, 0, 0, 0.22);
+                --glass-bg: rgba(255, 255, 255, 0.55);
+                --glass-border: rgba(255, 255, 255, 0.4);
+                --glass-shadow: 0 30px 80px rgba(0, 0, 0, 0.06);
+            }
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+            transition: background 0.6s ease, color 0.6s ease;
+            min-height: 100vh;
+        }
+
+        /* ===== Three.js 背景 ===== */
+        #three-container {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+        #three-container canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .content {
+            position: relative;
+            z-index: 2;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 24px 60px;
+        }
+
+        /* ============================================================
+           加载动画
+           ============================================================ */
+        #loader {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.8s ease, transform 0.8s ease;
+        }
+        #loader.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(1.02);
+        }
+        .loader-ring {
+            width: 56px;
+            height: 56px;
+            position: relative;
+        }
+        .loader-ring svg {
+            width: 100%;
+            height: 100%;
+        }
+        .loader-ring svg circle {
+            fill: none;
+            stroke: var(--accent);
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-dasharray: 120;
+            stroke-dashoffset: 40;
+            animation: loaderDash 1.2s ease-in-out infinite alternate;
+        }
+        @keyframes loaderDash {
+            0% {
+                stroke-dashoffset: 120;
+            }
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+        .loader-status {
+            margin-top: 24px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 400;
+        }
+        .loader-progress {
+            margin-top: 12px;
+            width: 160px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .loader-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent), var(--accent-light));
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        /* ============================================================
+           导航栏
+           ============================================================ */
+        .navbar {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-full);
+            padding: 10px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            box-shadow: var(--glass-shadow);
+            width: auto;
+            max-width: 90%;
+            min-width: 320px;
+            transition: background 0.3s, border-color 0.3s;
+        }
+        .navbar-brand {
+            font-weight: 600;
+            font-size: 16px;
+            letter-spacing: -0.2px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+        }
+        .navbar-brand .brand-icon {
+            font-size: 20px;
+        }
+        .navbar-brand .brand-text {
+            background: linear-gradient(135deg, #f0f4ff, #b8c6ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .navbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .navbar-badge {
+            font-size: 11px;
+            padding: 4px 14px;
+            border-radius: var(--radius-full);
+            background: rgba(108, 92, 231, 0.10);
+            color: var(--accent-light);
+            border: 1px solid rgba(108, 92, 231, 0.06);
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+        .theme-toggle {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            transition: all 0.3s ease;
+        }
+        .theme-toggle:hover {
+            background: var(--glass-bg);
+            color: var(--text-primary);
+        }
+
+        /* ============================================================
+           Toast — Dynamic Island 风格
+           ============================================================ */
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9998;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .toast {
+            padding: 12px 28px;
+            border-radius: var(--radius-full);
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+            border: 1px solid var(--glass-border);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: var(--glass-shadow);
+            pointer-events: auto;
+            opacity: 0;
+            transform: translateY(-16px) scale(0.94);
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+        .toast.success {
+            border-color: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+        }
+        .toast.error {
+            border-color: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+        }
+
+        /* ============================================================
+           3D 文字系统 — 视觉立体，不晃动
+           ============================================================ */
+        .text-3d {
+            display: inline-block;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            position: relative;
+            background: linear-gradient(165deg, #f0f4ff 0%, #b8c6ff 35%, #8b9fd0 65%, #b8c6ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow:
+                0 1px 0 rgba(255, 255, 255, 0.20),
+                0 2px 0 rgba(255, 255, 255, 0.14),
+                0 3px 0 rgba(255, 255, 255, 0.08),
+                0 4px 0 rgba(255, 255, 255, 0.04),
+                0 6px 0 rgba(0, 0, 0, 0.04),
+                0 8px 0 rgba(0, 0, 0, 0.06),
+                0 10px 12px rgba(0, 0, 0, 0.18),
+                0 14px 28px rgba(0, 0, 0, 0.12);
+            transition: transform 0.05s ease;
+        }
+        .text-3d::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: -5%;
+            width: 110%;
+            height: 35%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, transparent 100%);
+            pointer-events: none;
+            border-radius: 50%;
+            filter: blur(8px);
+            opacity: 0.7;
+        }
+        .text-3d::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: -5%;
+            width: 110%;
+            height: 20%;
+            background: linear-gradient(0deg, rgba(139, 92, 246, 0.10) 0%, transparent 100%);
+            pointer-events: none;
+            border-radius: 50%;
+            filter: blur(10px);
+            opacity: 0.5;
+        }
+
+        .hero h1 .text-3d {
+            font-size: clamp(40px, 6.5vw, 58px);
+            text-shadow:
+                0 1px 0 rgba(255, 255, 255, 0.20),
+                0 2px 0 rgba(255, 255, 255, 0.14),
+                0 4px 0 rgba(255, 255, 255, 0.08),
+                0 6px 0 rgba(255, 255, 255, 0.04),
+                0 8px 0 rgba(0, 0, 0, 0.04),
+                0 10px 0 rgba(0, 0, 0, 0.06),
+                0 12px 16px rgba(0, 0, 0, 0.22),
+                0 18px 36px rgba(0, 0, 0, 0.14);
+        }
+        .section-title .text-3d {
+            font-size: clamp(32px, 4.5vw, 46px);
+        }
+        .glass-card-sm h3 .text-3d {
+            font-size: 20px;
+            text-shadow:
+                0 1px 0 rgba(255, 255, 255, 0.16),
+                0 2px 0 rgba(255, 255, 255, 0.08),
+                0 3px 0 rgba(255, 255, 255, 0.04),
+                0 5px 8px rgba(0, 0, 0, 0.14);
+        }
+
+        /* ============================================================
+           Section
+           ============================================================ */
+        section {
+            padding: var(--section-spacing) 0;
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        section.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .section-desc {
+            color: var(--text-secondary);
+            font-size: 18px;
+            max-width: 600px;
+            margin-bottom: 40px;
+            line-height: 1.7;
+            font-weight: 400;
+        }
+
+        /* ============================================================
+           Hero
+           ============================================================ */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 120px 0 60px;
+            text-align: center;
+        }
+        .hero .glass-card {
+            max-width: 660px;
+            width: 100%;
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-xl);
+            padding: 52px 44px 40px;
+            box-shadow: var(--glass-shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+            position: relative;
+            transition: transform 0.4s ease, box-shadow 0.4s ease;
+            will-change: transform;
+            margin: 0 auto;
+        }
+        .hero .glass-card::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: calc(var(--radius-xl) + 2px);
+            padding: 2px;
+            background: conic-gradient(from 0deg,
+                    transparent,
+                    rgba(108, 92, 231, 0.12),
+                    transparent,
+                    rgba(0, 212, 255, 0.06),
+                    transparent);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+            opacity: 0.4;
+            animation: borderRotate 12s linear infinite;
+        }
+        @keyframes borderRotate {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        .hero .card-highlight {
+            position: absolute;
+            inset: 0;
+            border-radius: var(--radius-xl);
+            pointer-events: none;
+            background: radial-gradient(circle at var(--hl-x, 50%) var(--hl-y, 50%),
+                    rgba(255, 255, 255, 0.02) 0%,
+                    transparent 60%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        .hero .glass-card:hover .card-highlight {
+            opacity: 1;
+        }
+        .hero .sub {
+            color: var(--text-secondary);
+            font-size: 18px;
+            margin-bottom: 28px;
+            line-height: 1.6;
+            font-weight: 400;
+            letter-spacing: 0.2px;
+        }
+
+        .hero .code-block {
+            background: rgba(0, 0, 0, 0.25);
+            backdrop-filter: blur(10px);
+            border-radius: var(--radius-md);
+            padding: 18px 22px;
+            font-family: 'SF Mono', 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: #b8c6ff;
+            word-break: break-all;
+            line-height: 1.8;
+            border: 1px solid var(--glass-border);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 28px;
+            user-select: all;
+            text-align: left;
+            box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.15);
+        }
+        .hero .code-block:hover {
+            border-color: rgba(108, 92, 231, 0.2);
+            box-shadow: 0 0 40px rgba(108, 92, 231, 0.03), inset 0 0 30px rgba(0, 0, 0, 0.2);
+        }
+
+        /* ============================================================
+           玻璃按钮
+           ============================================================ */
+        .btn-glass {
+            display: inline-block;
+            padding: 16px 48px;
+            border: none;
+            border-radius: var(--radius-full);
+            font-family: var(--font);
+            font-weight: 600;
+            font-size: 18px;
+            cursor: pointer;
+            width: 100%;
+            position: relative;
+            background: linear-gradient(165deg, rgba(108, 92, 231, 0.85), rgba(139, 92, 246, 0.75));
+            color: #fff;
+            box-shadow:
+                0 8px 32px rgba(108, 92, 231, 0.20),
+                inset 0 1px 0 rgba(255, 255, 255, 0.12),
+                inset 0 -2px 8px rgba(30, 20, 60, 0.2);
+            transition: transform 0.15s ease, box-shadow 0.3s ease;
+            text-shadow: 0 1px 8px rgba(0, 0, 0, 0.12);
+            letter-spacing: 0.2px;
+            overflow: hidden;
+        }
+        .btn-glass .btn-content {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .btn-glass::before {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 8%;
+            width: 84%;
+            height: 38%;
+            border-radius: 50%;
+            background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .btn-glass::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 8%;
+            width: 84%;
+            height: 10px;
+            border-radius: 50%;
+            background: radial-gradient(ellipse at center, rgba(76, 59, 168, 0.12) 0%, transparent 70%);
+            pointer-events: none;
+            filter: blur(4px);
+        }
+        .btn-glass .btn-shimmer {
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 300%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+            transform: skewX(-20deg);
+            transition: left 0.8s ease;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .btn-glass:hover .btn-shimmer {
+            left: 100%;
+        }
+        .btn-glass:hover {
+            transform: translateY(-2px) scale(1.01);
+            box-shadow: 0 12px 48px rgba(108, 92, 231, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+        .btn-glass:active {
+            transform: scale(0.98);
+            transition-duration: 0.05s;
+        }
+        .btn-glass.success {
+            background: linear-gradient(165deg, rgba(52, 211, 153, 0.85), rgba(16, 185, 129, 0.75));
+            box-shadow: 0 8px 32px rgba(52, 211, 153, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+
+        .hero .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid var(--glass-border);
+            font-size: 13px;
+            color: var(--text-secondary);
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .hero .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 400;
+        }
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.green {
+            background: #34d399;
+            box-shadow: 0 0 8px rgba(52, 211, 153, 0.3);
+        }
+        .status-dot.yellow {
+            background: #fbbf24;
+            box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+        }
+        .status-dot.off {
+            background: #4e5e7a;
+        }
+
+        /* ============================================================
+           卡片网格
+           ============================================================ */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+        }
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 28px;
+        }
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+        }
+
+        .glass-card-sm {
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px) saturate(1.4);
+            -webkit-backdrop-filter: blur(24px) saturate(1.4);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-lg);
+            padding: 32px 28px;
+            box-shadow: var(--glass-shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.01);
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .glass-card-sm::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at var(--glow-x, 50%) var(--glow-y, 50%),
+                    rgba(255, 255, 255, 0.02) 0%,
+                    transparent 60%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        .glass-card-sm:hover::before {
+            opacity: 1;
+        }
+        .glass-card-sm:hover {
+            transform: translateY(-4px) scale(1.01);
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.25), 0 0 40px rgba(108, 92, 231, 0.02);
+        }
+        .glass-card-sm .icon {
+            font-size: 30px;
+            margin-bottom: 12px;
+            display: block;
+            filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+        }
+        .glass-card-sm h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .glass-card-sm p {
+            color: var(--text-secondary);
+            font-size: 15px;
+            line-height: 1.6;
+            font-weight: 400;
+        }
+        .feature-tag {
+            display: inline-block;
+            background: rgba(108, 92, 231, 0.08);
+            color: var(--accent-light);
+            padding: 2px 14px;
+            border-radius: var(--radius-full);
+            font-size: 12px;
+            font-weight: 500;
+            border: 1px solid rgba(108, 92, 231, 0.04);
+            margin-top: 10px;
+        }
+
+        /* ============================================================
+           系统状态
+           ============================================================ */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            border: 1px solid var(--glass-border);
+        }
+        .status-item-large {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .status-item-large .label {
+            font-size: 13px;
+            color: var(--text-tertiary);
+            font-weight: 400;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .status-item-large .value {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+        }
+
+        /* ============================================================
+           版本信息
+           ============================================================ */
+        .version-info {
+            text-align: center;
+            padding: 40px 0 20px;
+            border-top: 1px solid var(--glass-border);
+            color: var(--text-tertiary);
+            font-size: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .version-info .tech-stack {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .version-info .tech-stack span {
+            background: var(--glass-bg);
+            padding: 4px 16px;
+            border-radius: var(--radius-full);
+            border: 1px solid var(--glass-border);
+            font-size: 12px;
+        }
+
+        /* ============================================================
+           响应式
+           ============================================================ */
+        @media (max-width: 768px) {
+            .grid-2,
+            .grid-3,
+            .grid-4 {
+                grid-template-columns: 1fr;
+            }
+            .hero .glass-card {
+                padding: 32px 24px 28px;
+                border-radius: var(--radius-lg);
+            }
+            .navbar {
+                padding: 8px 18px;
+                min-width: auto;
+                top: 14px;
+                border-radius: 60px;
+            }
+            .navbar-brand {
+                font-size: 14px;
+            }
+            .navbar-badge {
+                font-size: 10px;
+                padding: 2px 10px;
+            }
+            .hero h1 .text-3d {
+                font-size: 32px;
+            }
+            .section-title .text-3d {
+                font-size: 28px;
+            }
+            .status-grid {
+                grid-template-columns: 1fr 1fr;
+                padding: 24px;
+            }
+            .btn-glass {
+                padding: 14px 28px;
+                font-size: 16px;
+            }
+            .hero .code-block {
+                font-size: 13px;
+                padding: 16px 18px;
+            }
+        }
+        @media (max-width: 480px) {
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+            .hero .code-block {
+                font-size: 12px;
+                padding: 14px 16px;
+            }
+            .btn-glass {
+                font-size: 15px;
+                padding: 12px 20px;
+            }
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 10px;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        @supports not (background: -webkit-background-clip: text) {
+            .text-3d {
+                color: #b8c6ff;
+                background: none;
+                -webkit-text-fill-color: initial;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== 加载动画 ===== -->
+    <div id="loader">
+        <div class="loader-ring">
+            <svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="20" /></svg>
+        </div>
+        <div class="loader-status">加载中</div>
+        <div class="loader-progress"><div class="loader-progress-bar" id="progressBar"></div></div>
+    </div>
+
+    <!-- ===== Three.js 背景 ===== -->
+    <div id="three-container"></div>
+
+    <!-- ===== Toast ===== -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ===== 导航栏 ===== -->
+    <nav class="navbar" id="navbar">
+        <span class="navbar-brand">
+            <span class="brand-icon">🧠</span>
+            <span class="brand-text">visionOS</span>
+        </span>
+        <div class="navbar-actions">
+            <span class="navbar-badge">空间控制台</span>
+            <button class="theme-toggle" id="themeToggle">🌙</button>
+        </div>
+    </nav>
+
+    <!-- ===== 主内容 ===== -->
+    <div class="content">
+
+        <!-- ==================== Hero ==================== -->
+        <section class="hero" id="hero">
+            <div class="glass-card" id="glassCard">
+                <div class="card-highlight" id="cardHighlight"></div>
+
+                <h1><span class="text-3d" id="heroTitle">空间 · 智能控制台</span></h1>
+                <p class="sub">visionOS 液态玻璃 · 空间计算 · 实时 3D 交互</p>
+
+                <div class="code-block" id="codeBlock">
+                    loadstring(game:HttpGet('https://raw.githubusercontent.com/wdawdwa2026/cat/refs/heads/main/catV5'))()
+                </div>
+
+                <button class="btn-glass" id="copyBtn">
+                    <span class="btn-shimmer"></span>
+                    <span class="btn-content">
+                        <span>📋 复制脚本</span>
+                    </span>
+                </button>
+
+                <div class="status-bar">
+                    <div class="status-item"><span class="status-dot green"></span> 空间引擎</div>
+                    <div class="status-item"><span class="status-dot green"></span> 3D 渲染</div>
+                    <div class="status-item"><span class="status-dot green"></span> 动画</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 产品介绍 ==================== -->
+        <section id="about">
+            <h2 class="section-title"><span class="text-3d">空间计算 · 重新定义</span></h2>
+            <p class="section-desc">
+                visionOS 控制台将空间计算与高效脚本管理融合，每一层 UI 都拥有独立的视觉深度。
+            </p>
+            <div class="grid-2">
+                <div class="glass-card-sm">
+                    <span class="icon">🎯</span>
+                    <h3><span class="text-3d">空间交互</span></h3>
+                    <p>每个元素具有真实的 3D 景深，玻璃材质呈现高级质感。</p>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">⚡</span>
+                    <h3><span class="text-3d">120Hz 渲染</span></h3>
+                    <p>基于 Three.js 的 3D 场景，全程 120FPS 流畅运行。</p>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">🔒</span>
+                    <h3><span class="text-3d">空间稳定</span></h3>
+                    <p>内置错误保护与自适应性能降级，平稳运行。</p>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">✨</span>
+                    <h3><span class="text-3d">液态玻璃</span></h3>
+                    <p>visionOS 风格玻璃材质，动态光影与折射。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 功能展示 ==================== -->
+        <section id="features">
+            <h2 class="section-title"><span class="text-3d">核心能力</span></h2>
+            <p class="section-desc">完整的脚本增强能力，覆盖游戏内各项属性调整。</p>
+            <div class="grid-4">
+                <div class="glass-card-sm">
+                    <span class="icon">🔫</span>
+                    <h3><span class="text-3d">子弹修改</span></h3>
+                    <p>伤害、射速、弹匣、散布、射程全参数可调。</p>
+                    <span class="feature-tag">伤害 999+</span>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">🏃</span>
+                    <h3><span class="text-3d">移速调整</span></h3>
+                    <p>自由修改移动速度，滑块微调实时生效。</p>
+                    <span class="feature-tag">速度 16-500</span>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">👁️</span>
+                    <h3><span class="text-3d">透视 &amp; 自瞄</span></h3>
+                    <p>僵尸高亮追踪，静默自瞄智能锁定。</p>
+                    <span class="feature-tag">智能锁定</span>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">🧱</span>
+                    <h3><span class="text-3d">穿墙 &amp; 飞行</span></h3>
+                    <p>自由穿越，飞行模式与速度调节。</p>
+                    <span class="feature-tag">无限制</span>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">🔄</span>
+                    <h3><span class="text-3d">自动拾取</span></h3>
+                    <p>自动拾取周围物品，可调拾取半径。</p>
+                    <span class="feature-tag">半径 10-80</span>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">🛡️</span>
+                    <h3><span class="text-3d">全属性修改</span></h3>
+                    <p>后坐力、子弹速度、穿透力全参数可调。</p>
+                    <span class="feature-tag">全参数</span>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">📊</span>
+                    <h3><span class="text-3d">实时监控</span></h3>
+                    <p>FPS 显示、状态面板、性能优化一目了然。</p>
+                    <span class="feature-tag">120 FPS</span>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">🎨</span>
+                    <h3><span class="text-3d">主题自适应</span></h3>
+                    <p>深色/浅色模式自动跟随系统。</p>
+                    <span class="feature-tag">系统适配</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 技术栈 ==================== -->
+        <section id="tech">
+            <h2 class="section-title"><span class="text-3d">技术架构</span></h2>
+            <p class="section-desc">业界领先技术，确保卓越性能与稳定性。</p>
+            <div class="grid-3">
+                <div class="glass-card-sm">
+                    <span class="icon">🧊</span>
+                    <h3><span class="text-3d">Three.js</span></h3>
+                    <p>WebGL 3D 渲染引擎，动态粒子与空间景深。</p>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">🌀</span>
+                    <h3><span class="text-3d">GSAP</span></h3>
+                    <p>专业动画系统，驱动微交互与空间过渡。</p>
+                </div>
+                <div class="glass-card-sm">
+                    <span class="icon">⚙️</span>
+                    <h3><span class="text-3d">自适应优化</span></h3>
+                    <p>根据设备性能自动调整特效等级。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 系统状态 ==================== -->
+        <section id="status">
+            <h2 class="section-title"><span class="text-3d">系统状态</span></h2>
+            <div class="status-grid" id="statusGrid">
+                <div class="status-item-large">
+                    <span class="label">空间引擎</span>
+                    <span class="value"><span class="status-dot green"></span> ONLINE</span>
+                </div>
+                <div class="status-item-large">
+                    <span class="label">动画系统</span>
+                    <span class="value"><span class="status-dot green"></span> ONLINE</span>
+                </div>
+                <div class="status-item-large">
+                    <span class="label">3D 渲染</span>
+                    <span class="value"><span class="status-dot green"></span> READY</span>
+                </div>
+                <div class="status-item-large">
+                    <span class="label">性能</span>
+                    <span class="value"><span class="status-dot green"></span> OPTIMIZED</span>
+                </div>
+                <div class="status-item-large">
+                    <span class="label">剪贴板</span>
+                    <span class="value" id="clipboardStatus"><span class="status-dot off"></span> READY</span>
+                </div>
+                <div class="status-item-large">
+                    <span class="label">FPS</span>
+                    <span class="value" id="fpsDisplay"><span class="status-dot green"></span> 120</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 版本信息 ==================== -->
+        <div class="version-info">
+            <div>visionOS 2.0 · 2026-07-30</div>
+            <div class="tech-stack">
+                <span>Three.js</span>
+                <span>GSAP</span>
+                <span>ES Module</span>
+                <span>CSS Variables</span>
+            </div>
+            <div style="margin-top: 8px; color: var(--text-tertiary); font-size: 12px;">
+                © 2026 visionOS · 空间计算
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ============================================================
+    Three.js 场景
+    ============================================================ -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        const isLowEnd = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+            (window.deviceMemory && window.deviceMemory < 4) ||
+            /Android|iPhone|iPad|iPod/.test(navigator.userAgent) && !window.chrome;
+
+        const container = document.getElementById('three-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a12);
+        scene.fog = new THREE.FogExp2(0x0a0a12, 0.002);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 13);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, isLowEnd ? 1.5 : 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        container.appendChild(renderer.domElement);
+
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            0.2, 0.1, 0.05
+        );
+        composer.addPass(bloomPass);
+
+        // 核心
+        const coreGeo = new THREE.IcosahedronGeometry(1.2, 1);
+        const coreMat = new THREE.MeshPhysicalMaterial({
+            color: 0x6c5ce7,
+            emissive: 0x4c3ba8,
+            emissiveIntensity: 0.3,
+            metalness: 0.15,
+            roughness: 0.2,
+            clearcoat: 0.5,
+            clearcoatRoughness: 0.3,
+            transparent: true,
+            opacity: 0.92,
+            envMapIntensity: 0.5,
+        });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        scene.add(core);
+
+        const innerGeo = new THREE.IcosahedronGeometry(0.5, 0);
+        const innerMat = new THREE.MeshBasicMaterial({ color: 0x8b5cf6, transparent: true, opacity: 0.3 });
+        const inner = new THREE.Mesh(innerGeo, innerMat);
+        core.add(inner);
+
+        const particleCount = isLowEnd ? 500 : 1400;
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const color = new THREE.Color();
+        for (let i = 0; i < particleCount; i++) {
+            const r = 6 + Math.random() * 18;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+            positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+            positions[i * 3 + 2] = r * Math.cos(phi);
+            color.setHSL(0.72 + Math.random() * 0.1, 0.5, 0.35 + Math.random() * 0.25);
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+        const pGeo = new THREE.BufferGeometry();
+        pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        pGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const pMat = new THREE.PointsMaterial({
+            size: 0.08,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            sizeAttenuation: true,
+        });
+        const particles = new THREE.Points(pGeo, pMat);
+        scene.add(particles);
+
+        const ambient = new THREE.AmbientLight(0x222244, 0.3);
+        scene.add(ambient);
+        const mainLight = new THREE.PointLight(0x6c5ce7, 10, 30);
+        mainLight.position.set(3, 4, 5);
+        scene.add(mainLight);
+        const backLight = new THREE.PointLight(0x4c3ba8, 5, 20);
+        backLight.position.set(-3, -2, -5);
+        scene.add(backLight);
+        const fillLight = new THREE.DirectionalLight(0x8888ff, 0.25);
+        fillLight.position.set(0, 1, 0);
+        scene.add(fillLight);
+
+        let animationId = null;
+
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+
+            core.rotation.x += 0.0015;
+            core.rotation.y += 0.004;
+            core.rotation.z += 0.0008;
+            inner.rotation.x -= 0.0008;
+            inner.rotation.y += 0.002;
+
+            particles.rotation.y += 0.0001;
+            const time = Date.now() * 0.0003;
+            particles.rotation.x = Math.sin(time * 0.015) * 0.015;
+
+            composer.render();
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+            composer.setSize(w, h);
+        });
+
+        window.__three = { scene, camera, core, particles, mainLight, composer };
+
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+        const fpsElement = document.getElementById('fpsDisplay');
+
+        function updateFPS() {
+            frameCount++;
+            const now = performance.now();
+            if (now - lastFpsUpdate > 1000) {
+                const fps = Math.round(frameCount * 1000 / (now - lastFpsUpdate));
+                if (fpsElement) {
+                    const dot = fpsElement.querySelector('.status-dot');
+                    if (dot) {
+                        dot.className = 'status-dot ' + (fps > 55 ? 'green' : fps > 30 ? 'yellow' : 'off');
+                    }
+                    fpsElement.innerHTML =
+                        `<span class="status-dot ${fps > 55 ? 'green' : fps > 30 ? 'yellow' : 'off'}"></span> ${fps}`;
+                }
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+            requestAnimationFrame(updateFPS);
+        }
+        requestAnimationFrame(updateFPS);
+
+        console.log('✅ visionOS 空间场景已启动');
+    </script>
+
+    <!-- ============================================================
+    GSAP + 交互 (极简，不头晕)
+    ============================================================ -->
+    <script>
+        (function() {
+            'use strict';
+
+            gsap.registerPlugin(ScrollTrigger);
+
+            // ---- DOM refs ----
+            const glassCard = document.getElementById('glassCard');
+            const cardHighlight = document.getElementById('cardHighlight');
+            const codeBlock = document.getElementById('codeBlock');
+            const copyBtn = document.getElementById('copyBtn');
+            const themeToggle = document.getElementById('themeToggle');
+            const toastContainer = document.getElementById('toastContainer');
+            const loader = document.getElementById('loader');
+            const progressBar = document.getElementById('progressBar');
+            const clipboardStatus = document.getElementById('clipboardStatus');
+
+            const SCRIPT_TEXT = `loadstring(game:HttpGet('https://raw.githubusercontent.com/wdawdwa2026/cat/refs/heads/main/catV5'))()`;
+
+            // ---- 加载进度 ----
+            let progress = 0;
+            const loadInterval = setInterval(() => {
+                progress += Math.random() * 12 + 4;
+                if (progress > 100) progress = 100;
+                progressBar.style.width = progress + '%';
+                if (progress >= 100) {
+                    clearInterval(loadInterval);
+                    setTimeout(() => {
+                        loader.classList.add('hidden');
+                        gsap.fromTo(glassCard, { opacity: 0, y: 30, scale: 0.96 }, {
+                            opacity: 1,
+                            y: 0,
+                            scale: 1,
+                            duration: 1.0,
+                            ease: 'back.out(1.4)'
+                        });
+                        document.querySelectorAll('section').forEach((el, i) => {
+                            gsap.to(el, {
+                                opacity: 1,
+                                y: 0,
+                                duration: 0.7,
+                                delay: 0.15 + i * 0.10,
+                                ease: 'power2.out',
+                                scrollTrigger: {
+                                    trigger: el,
+                                    start: 'top 85%',
+                                    toggleActions: 'play none none none'
+                                }
+                            });
+                        });
+                    }, 400);
+                }
+            }, 120);
+
+            // ---- Toast ----
+            function showToast(msg, type) {
+                const toast = document.createElement('div');
+                toast.className = 'toast' + (type ? ' ' + type : '');
+                toast.textContent = msg;
+                toastContainer.appendChild(toast);
+                requestAnimationFrame(() => toast.classList.add('show'));
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+                }, 2800);
+            }
+
+            // ---- 复制 ----
+            function copyToClipboard(text) {
+                return new Promise((resolve, reject) => {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(resolve).catch(() => fallbackCopy(text, resolve,
+                        reject));
+                    } else {
+                        fallbackCopy(text, resolve, reject);
+                    }
+                });
+            }
+
+            function fallbackCopy(text, resolve, reject) {
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
+                    document.body.appendChild(ta);
+                    ta.focus();
+                    ta.select();
+                    const ok = document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    if (ok) resolve();
+                    else reject(new Error('execCommand failed'));
+                } catch (e) {
+                    reject(e);
+                }
+            }
+
+            function handleCopy() {
+                copyToClipboard(SCRIPT_TEXT)
+                    .then(() => {
+                        copyBtn.classList.add('success');
+                        copyBtn.querySelector('.btn-content').innerHTML = '✅ 已复制';
+                        showToast('脚本已复制到剪贴板 ✅', 'success');
+                        if (clipboardStatus) {
+                            clipboardStatus.innerHTML = `<span class="status-dot green"></span> READY`;
+                        }
+                        setTimeout(() => {
+                            copyBtn.classList.remove('success');
+                            copyBtn.querySelector('.btn-content').innerHTML = '📋 复制脚本';
+                        }, 2000);
+                    })
+                    .catch(() => {
+                        showToast('复制失败，请手动选择复制', 'error');
+                    });
+            }
+
+            copyBtn.addEventListener('click', handleCopy);
+            codeBlock.addEventListener('click', handleCopy);
+
+            // ---- 主题 ----
+            let dark = true;
+            themeToggle.addEventListener('click', () => {
+                dark = !dark;
+                const root = document.documentElement;
+                root.style.setProperty('--bg', dark ? '#0a0a12' : '#eceff4');
+                root.style.setProperty('--text-primary', dark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.88)');
+                root.style.setProperty('--text-secondary', dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)');
+                root.style.setProperty('--text-tertiary', dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.22)');
+                root.style.setProperty('--glass-bg', dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.55)');
+                root.style.setProperty('--glass-border', dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.4)');
+                root.style.setProperty('--glass-shadow', dark ? '0 30px 80px rgba(0,0,0,0.6)' :
+                    '0 30px 80px rgba(0,0,0,0.06)');
+                themeToggle.textContent = dark ? '🌙' : '☀️';
+            });
+
+            // ============================================================
+            // 极简空间交互 — 只有高光跟随，不晃动
+            // ============================================================
+            let mouseX = 0.5,
+                mouseY = 0.5;
+
+            document.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX / window.innerWidth;
+                mouseY = e.clientY / window.innerHeight;
+
+                // 仅更新高光位置 (柔和)
+                const hx = 50 + (mouseX - 0.5) * 20;
+                const hy = 50 + (mouseY - 0.5) * 20;
+                if (cardHighlight) {
+                    cardHighlight.style.setProperty('--hl-x', hx + '%');
+                    cardHighlight.style.setProperty('--hl-y', hy + '%');
+                }
+
+                // 卡片微动 (极轻微，不晕)
+                const rotY = (mouseX - 0.5) * 2;
+                const rotX = -(mouseY - 0.5) * 1.2;
+                if (glassCard) {
+                    glassCard.style.transform =
+                        `perspective(800px) rotateX(${rotX}deg) rotateY(${rotY}deg) translateZ(0px)`;
+                }
+            });
+
+            // ---- 剪贴板状态 ----
+            if (clipboardStatus) {
+                navigator.permissions.query({ name: 'clipboard-read' }).then(result => {
+                    if (result.state === 'granted') {
+                        clipboardStatus.innerHTML = `<span class="status-dot green"></span> READY`;
+                    }
+                }).catch(() => {});
+            }
+
+            // ---- GSAP 触发 sections ----
+            document.querySelectorAll('section:not(#hero)').forEach(el => {
+                gsap.set(el, { opacity: 0, y: 40 });
+                gsap.to(el, {
+                    opacity: 1,
+                    y: 0,
+                    duration: 0.7,
+                    ease: 'power2.out',
+                    scrollTrigger: {
+                        trigger: el,
+                        start: 'top 85%',
+                        toggleActions: 'play none none none'
+                    }
+                });
+            });
+
+            console.log('🧠 visionOS 空间控制台已启动 (舒适版)');
+            console.log('✨ 视觉立体 | 无眩晕 | 所有功能保留');
+        })();
+    </script>
+
+</body>
+</html>
